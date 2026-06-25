@@ -443,6 +443,10 @@ async function submitLogin(){
       if(toran.status==='approved'){
         if(toran.is_admin||toran.is_cleaning_admin){S.loading=false;S.pinInput='';S.pinConfirm='';S.pinError='';S.screen=toran.admin_pin?'enter_pin':'set_pin';render();}
         else{await enterApp();}
+      }else if(toran.status==='inactive'){
+        await api.updateToran(toran.id,{status:'pending',name:name});
+        S.currentUser=Object.assign({},toran,{status:'pending',name:name});
+        S.loading=false;S.screen='pending';render();
       }else{S.loading=false;S.screen='pending';render();}
     }else{
       const existing=await api.getAllToranim();
@@ -748,8 +752,19 @@ async function addToranDirect(){
   const name=(S.newToranName||'').trim(),phone=normalizePhone(S.newToranPhone||'');
   const err=document.getElementById('add-toran-error');
   if(!name||phone.length<9){err.innerHTML='<div class="error-text">נא להזין שם ומספר טלפון תקינים</div>';return;}
-  try{await api.insertToran({name:name,phone:phone,status:'approved',is_admin:false,is_cleaning_admin:false});S.newToranName='';S.newToranPhone='';await loadToranim();render();}
-  catch(e){err.innerHTML='<div class="error-text">שגיאה: '+esc(e.message)+'</div>';}
+  try{
+    const existing=await api.getToranByPhone(phone);
+    if(existing){
+      if(existing.status==='inactive'){
+        await api.updateToran(existing.id,{name:name,status:'approved'});
+      } else {
+        err.innerHTML='<div class="error-text">תורן עם מספר טלפון זה כבר קיים ופעיל במערכת</div>';return;
+      }
+    } else {
+      await api.insertToran({name:name,phone:phone,status:'approved',is_admin:false,is_cleaning_admin:false});
+    }
+    S.newToranName='';S.newToranPhone='';await loadToranim();render();
+  }catch(e){err.innerHTML='<div class="error-text">שגיאה: '+esc(e.message)+'</div>';}
 }
 
 /* ===== תיקיית תורנים ===== */
