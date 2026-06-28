@@ -398,7 +398,14 @@ const WEEKDAY_FULL=['יום ראשון','יום שני','יום שלישי','י�
 function formatGregFull(s){const p=s.split('-').map(Number);return WEEKDAY_FULL[new Date(p[0],p[1]-1,p[2]).getDay()]+', '+p[2]+' ב'+GREG_MONTH_NAMES[p[1]-1]+' '+p[0];}
 function formatHebFull(s){const p=s.split('-').map(Number),h=gregorianToHebrew(p[0],p[1],p[2]);return hebrewGematria(h.day)+' ב'+hebrewMonthName(h.year,h.month)+' '+hebrewGematria(h.year%1000);}
 function normalizePhone(raw){let d=(raw||'').replace(/\D/g,'');if(d.indexOf('972')===0)d='0'+d.slice(3);else if(d.length===9&&d.indexOf('0')!==0)d='0'+d;return d;}
-function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+
+/* Hash PIN עם SHA-256 לפני שמירה — מונע קריאת PIN גולמי ממסד הנתונים */
+async function hashPin(pin) {
+  const data = new TextEncoder().encode('roster_pin_v1:' + pin);
+  const buf = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
+}
 
 /* ===== מצב האפליקציה ===== */
 const S={
@@ -486,8 +493,12 @@ async function submitSetPin(){
   if(S.pinInput.length!==4){S.pinError='הקוד חייב להיות בדיוק 4 ספרות';render();return;}
   if(S.pinInput!==S.pinConfirm){S.pinError='הקודים אינם תואמים';render();return;}
   S.pinError='';S.loading=true;render();
-  try{await api.updateToran(S.currentUser.id,{admin_pin:S.pinInput});S.currentUser.admin_pin=S.pinInput;await enterApp();}
-  catch(e){S.loading=false;S.pinError='שגיאה: '+e.message;render();}
+  try{
+    const hashed = await hashPin(S.pinInput);
+    await api.updateToran(S.currentUser.id,{admin_pin:hashed});
+    S.currentUser.admin_pin=hashed;
+    await enterApp();
+  }catch(e){S.loading=false;S.pinError='שגיאה: '+e.message;render();}
 }
 function renderEnterPinScreen(){
   const roles=[];if(S.currentUser.is_admin)roles.push('מטבח');if(S.currentUser.is_cleaning_admin)roles.push('ניקיון');
@@ -499,7 +510,19 @@ function renderEnterPinScreen(){
     +'<button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px;" onclick="submitEnterPin()">כניסה</button>'
   +'</div></div>';
 }
-function submitEnterPin(){if(S.pinInput===S.currentUser.admin_pin){enterApp();}else{enterAppWithoutAdmin();}}
+async function submitEnterPin(){
+  const stored=S.currentUser.admin_pin;
+  if(!stored){enterAppWithoutAdmin();return;}
+  let matches;
+  if(stored.length===4){
+    /* PIN ישן בטקסט גלוי — השוואה ישירה, יתעדכן ב-set_pin הבא */
+    matches = S.pinInput === stored;
+  } else {
+    const hashed = await hashPin(S.pinInput);
+    matches = hashed === stored;
+  }
+  if(matches) enterApp(); else enterAppWithoutAdmin();
+}
 async function enterAppWithoutAdmin(){S.currentUser=Object.assign({},S.currentUser,{is_admin:false,is_cleaning_admin:false});await enterApp();}
 function renderPendingScreen(){
   return '<div class="center-screen"><div class="card auth-card" style="text-align:center;">'
