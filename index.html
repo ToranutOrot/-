@@ -167,6 +167,11 @@
   .cal-cell .g-day{font-size:15px;font-weight:700;}
   .cal-cell.today .g-day{color:var(--accent-dark);}
   .cal-cell .h-day{font-size:10.5px;color:var(--ink-muted);line-height:1.3;}
+  .holiday-tag{font-size:9px;color:#7C3AED;font-weight:700;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pill-exempt{background:#fee2e2;color:#b91c1c;font-weight:700;}
+  .pill-half{background:#ede9fe;color:#6d28d9;}
+  .pill-yomtov{background:#f3e8ff;color:#7c3aed;}
+  .folder-exempt .name{color:#b91c1c;font-weight:700;}
   .cal-cell .chips{display:flex;flex-direction:column;gap:3px;margin-top:auto;}
   .chip{
     background:var(--confirm-soft);color:var(--confirm-dark);font-size:10.5px;font-weight:600;border-radius:5px;
@@ -300,7 +305,7 @@ const api = {
   insertAssignment: (date, tid) => sb('assignments', { method: 'POST', body: { date: date, toran_id: tid } }).then(r => r && r[0]),
   updateAssignment: (id, d) => sb('assignments?id=eq.' + id, { method: 'PATCH', body: d }).then(r => r && r[0]),
   deleteAssignment: (id) => sb('assignments?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' }),
-  getAssignmentsForCount: (s, e) => sb('assignments?select=toran_id&date=gte.' + s + '&date=lte.' + e),
+  getAssignmentsForCount: (s, e) => sb('assignments?select=toran_id,date&date=gte.' + s + '&date=lte.' + e),
   getCleaningRange: (s, e) => sb('cleaning_assignments?select=id,week_start,toran_id,swap_requested,created_at,toranim(id,name,phone)&week_start=gte.' + s + '&week_start=lte.' + e + '&order=week_start.asc'),
   getCleaningForToran: (tid, from) => sb('cleaning_assignments?select=id,week_start,created_at&toran_id=eq.' + tid + (from ? '&week_start=gte.' + from : '') + '&order=week_start.asc'),
   insertCleaning: (ws, tid) => sb('cleaning_assignments', { method: 'POST', body: { week_start: ws, toran_id: tid } }).then(r => r && r[0]),
@@ -399,6 +404,54 @@ function formatGregFull(s){const p=s.split('-').map(Number);return WEEKDAY_FULL[
 function formatHebFull(s){const p=s.split('-').map(Number),h=gregorianToHebrew(p[0],p[1],p[2]);return hebrewGematria(h.day)+' ב'+hebrewMonthName(h.year,h.month)+' '+hebrewGematria(h.year%1000);}
 function normalizePhone(raw){let d=(raw||'').replace(/\D/g,'');if(d.indexOf('972')===0)d='0'+d.slice(3);else if(d.length===9&&d.indexOf('0')!==0)d='0'+d;return d;}
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+
+/* ===== חגים יהודיים ===== */
+function getHolidayName(hy, hm, hd) {
+  const gp = hebrewToGregorian(hy,hm,hd).split('-').map(Number);
+  const dow = new Date(gp[0],gp[1]-1,gp[2]).getDay(); // 0=א, 6=ש
+  const dow3 = function(m,d){ const p=hebrewToGregorian(hy,m,d).split('-').map(Number); return new Date(p[0],p[1]-1,p[2]).getDay(); };
+  if(hm===7&&hd===1)return 'ראש השנה';
+  if(hm===7&&hd===2)return 'ראש השנה';
+  if(hm===7&&hd===3&&dow!==6)return 'צום גדליה';
+  if(hm===7&&hd===4&&dow3(7,3)===6)return 'צום גדליה';
+  if(hm===7&&hd===10)return 'יום כיפור';
+  if(hm===7&&hd>=15&&hd<=21)return 'סוכות';
+  if(hm===7&&hd===22)return 'שמחת תורה';
+  const kl=hebrewMonthLength(hy,9);
+  if(hm===9&&hd>=25)return 'חנוכה';
+  if(hm===10&&hd>=1&&hd<=(32-kl))return 'חנוכה';
+  if(hm===10&&hd===10)return 'עשרה בטבת';
+  if(hm===11&&hd===15)return 'ט״ו בשבט';
+  const am=hebrewLeapYear(hy)?13:12;
+  if(hm===am&&hd===13&&dow!==6)return 'תענית אסתר';
+  if(hm===am&&hd===11&&dow3(am,13)===6)return 'תענית אסתר';
+  if(hm===am&&hd===14)return 'פורים';
+  if(hm===1&&hd>=15&&hd<=22)return 'פסח';
+  if(hm===2&&hd===4)return 'יום הזיכרון';
+  if(hm===2&&hd===5)return 'יום העצמאות';
+  if(hm===2&&hd===18)return 'ל״ג בעומר';
+  if(hm===2&&hd===28)return 'יום ירושלים';
+  if(hm===3&&(hd===6||hd===7))return 'שבועות';
+  if(hm===4&&hd===17&&dow!==6)return 'י״ז בתמוז';
+  if(hm===4&&hd===18&&dow3(4,17)===6)return 'י״ז בתמוז';
+  if(hm===5&&hd===9&&dow!==6)return 'תשעה באב';
+  if(hm===5&&hd===10&&dow3(5,9)===6)return 'תשעה באב';
+  return null;
+}
+/* ראש השנה, סוכות, פסח, שבועות — נספרים כשבת/יו"ט בתיקיה */
+function isYomTovDate(hy,hm,hd){
+  if(hm===7&&(hd===1||hd===2))return true;
+  if(hm===7&&hd>=15&&hd<=22)return true;
+  if(hm===1&&hd>=15&&hd<=22)return true;
+  if(hm===3&&(hd===6||hd===7))return true;
+  return false;
+}
+function isShabbatOrYomTov(ymdStr){
+  const p=ymdStr.split('-').map(Number);
+  if(new Date(p[0],p[1]-1,p[2]).getDay()===6)return true;
+  const h=gregorianToHebrew(p[0],p[1],p[2]);
+  return isYomTovDate(h.year,h.month,h.day);
+}
 
 /* Hash PIN עם SHA-256 לפני שמירה — מונע קריאת PIN גולמי ממסד הנתונים */
 async function hashPin(pin) {
@@ -655,9 +708,10 @@ function renderMain(){
   for(let d=1;d<=nd;d++){
     const ds=ymd(y,m,d),h=gregorianToHebrew(y,m,d),sm=(lhm===null||h.month!==lhm);lhm=h.month;
     const hl=hebrewGematria(h.day)+(sm?' ב'+hebrewMonthName(h.year,h.month):'');
+    const holiday=getHolidayName(h.year,h.month,h.day);
     const da=S.assignments[ds]||[],hs=da.some(function(a){return a.swap_requested;});
     let ch='';if(da.length){const sh=da.slice(0,2);ch='<div class="chips">'+sh.map(function(a){return '<div class="chip">'+esc(a.name)+(a.swap_requested?' 🔄':'')+'</div>';}).join('');if(da.length>2)ch+='<div class="chip-more">+'+(da.length-2)+' נוספים</div>';ch+='</div>';}
-    cells+='<div class="cal-cell'+(ds===td?' today':'')+(hs?' swap-pending':'')+'" onclick="openDay(\''+ds+'\')"><div class="g-day">'+d+'</div><div class="h-day">'+hl+'</div>'+ch+'</div>';
+    cells+='<div class="cal-cell'+(ds===td?' today':'')+(hs?' swap-pending':'')+'" onclick="openDay(\''+ds+'\')"><div class="g-day">'+d+'</div><div class="h-day">'+hl+'</div>'+(holiday?'<div class="holiday-tag">'+esc(holiday)+'</div>':'')+ch+'</div>';
   }
   const tr=(7-((fw+nd)%7))%7;for(let i=0;i<tr;i++)cells+='<div class="cal-cell empty"></div>';
   return '<main class="app-main">'
@@ -703,7 +757,9 @@ function updateAssignSuggestions(val){
 }
 async function assignToran(tid){
   const ds=S.modalDate;if((S.assignments[ds]||[]).some(function(a){return a.toran_id===tid;})){alert('תורן זה כבר משובץ ביום זה');return;}
-  try{const cr=await api.insertAssignment(ds,tid);const t=S.toranim.find(function(x){return x.id===tid;});if(!S.assignments[ds])S.assignments[ds]=[];S.assignments[ds].push({id:cr.id,toran_id:tid,name:t.name,created_at:cr.created_at,swap_requested:false});S.assignQuery='';render();}
+  const t=S.toranim.find(function(x){return x.id===tid;});
+  if(t&&t.duty_status==='exempt'){if(!confirm('לתורן זה יש פטור תורנות. אתה בטוח שאתה רוצה לשבץ?'))return;}
+  try{const cr=await api.insertAssignment(ds,tid);if(!S.assignments[ds])S.assignments[ds]=[];S.assignments[ds].push({id:cr.id,toran_id:tid,name:t.name,created_at:cr.created_at,swap_requested:false});S.assignQuery='';render();}
   catch(e){alert((e.message&&e.message.indexOf('duplicate')!==-1)?'תורן זה כבר משובץ ביום זה':'שגיאה: '+e.message);}
 }
 async function removeAssignment(id){const ds=S.modalDate;try{await api.deleteAssignment(id);S.assignments[ds]=(S.assignments[ds]||[]).filter(function(a){return a.id!==id;});render();}catch(e){alert('שגיאה: '+e.message);}}
@@ -754,7 +810,9 @@ function updateCleaningSuggestions(val){
 }
 async function assignCleaningToran(tid){
   const ws=S.cleaningModalWeek;if((S.cleaningAssignments[ws]||[]).some(function(a){return a.toran_id===tid;})){alert('תורן זה כבר משובץ לשבוע זה');return;}
-  try{const cr=await api.insertCleaning(ws,tid);const t=S.toranim.find(function(x){return x.id===tid;});if(!S.cleaningAssignments[ws])S.cleaningAssignments[ws]=[];S.cleaningAssignments[ws].push({id:cr.id,toran_id:tid,name:t.name,created_at:cr.created_at,swap_requested:false});S.cleaningAssignQuery='';render();}
+  const t=S.toranim.find(function(x){return x.id===tid;});
+  if(t&&t.duty_status==='exempt'){if(!confirm('לתורן זה יש פטור תורנות. אתה בטוח שאתה רוצה לשבץ?'))return;}
+  try{const cr=await api.insertCleaning(ws,tid);if(!S.cleaningAssignments[ws])S.cleaningAssignments[ws]=[];S.cleaningAssignments[ws].push({id:cr.id,toran_id:tid,name:t.name,created_at:cr.created_at,swap_requested:false});S.cleaningAssignQuery='';render();}
   catch(e){alert((e.message&&e.message.indexOf('duplicate')!==-1)?'תורן זה כבר משובץ לשבוע זה':'שגיאה: '+e.message);}
 }
 async function removeCleaningAssignment(id){const ws=S.cleaningModalWeek;try{await api.deleteCleaning(id);S.cleaningAssignments[ws]=(S.cleaningAssignments[ws]||[]).filter(function(a){return a.id!==id;});render();}catch(e){alert('שגיאה: '+e.message);}}
@@ -774,13 +832,14 @@ function renderAdminPanel(){
   const pending=S.toranim.filter(function(t){return t.status==='pending';}),active=S.toranim.filter(function(t){return t.status==='approved';});
   const kac=active.filter(function(t){return t.is_admin;}).length;
   const ph=pending.length?pending.map(function(t){return '<div class="admin-row"><div><div class="name">'+esc(t.name)+'</div><div class="phone">'+esc(t.phone)+'</div></div><div class="admin-row-actions"><button class="btn btn-confirm btn-sm" onclick="approveToran(\''+t.id+'\')">אישור</button><button class="btn btn-danger btn-sm" onclick="rejectToran(\''+t.id+'\')">דחייה</button></div></div>';}).join(''):'<div class="empty-note-sm">אין בקשות ממתינות</div>';
-  const ah=active.length?active.map(function(t){const ilka=t.is_admin&&kac<=1;return '<div class="admin-row"><div><div class="name">'+esc(t.name)+'</div><div class="phone">'+esc(t.phone)+'</div></div><div class="admin-row-actions"><label class="toggle-wrap"><input type="checkbox" '+(t.is_admin?'checked':'')+' onchange="toggleKitchenAdmin(\''+t.id+'\',this.checked)"> מנהל מטבח</label><label class="toggle-wrap"><input type="checkbox" '+(t.is_cleaning_admin?'checked':'')+' onchange="toggleCleaningAdmin(\''+t.id+'\',this.checked)"> מנהל ניקיון</label><button class="btn btn-danger btn-sm" '+(ilka?'disabled title="לא ניתן להסיר את מנהל המטבח היחיד"':'')+' onclick="deactivateToran(\''+t.id+'\')">הסרה</button></div></div>';}).join(''):'<div class="empty-note-sm">אין תורנים פעילים</div>';
+  const ah=active.length?active.map(function(t){const ilka=t.is_admin&&kac<=1;const ds=t.duty_status||'normal';return '<div class="admin-row" style="flex-wrap:wrap;gap:6px;"><div><div class="name">'+esc(t.name)+'</div><div class="phone">'+esc(t.phone)+'</div></div><div class="admin-row-actions" style="flex-wrap:wrap;gap:5px;"><label class="toggle-wrap"><input type="checkbox" '+(t.is_admin?'checked':'')+' onchange="toggleKitchenAdmin(\''+t.id+'\',this.checked)"> מנהל מטבח</label><label class="toggle-wrap"><input type="checkbox" '+(t.is_cleaning_admin?'checked':'')+' onchange="toggleCleaningAdmin(\''+t.id+'\',this.checked)"> מנהל ניקיון</label><select style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:3px 6px;background:var(--surface);" onchange="setDutyStatus(\''+t.id+'\',this.value)"><option value="normal" '+(ds==='normal'?'selected':'')+'>תורנות רגילה</option><option value="half" '+(ds==='half'?'selected':'')+'>חצי תורנות</option><option value="exempt" '+(ds==='exempt'?'selected':'')+'>פטור תורנות</option></select><button class="btn btn-danger btn-sm" '+(ilka?'disabled title="לא ניתן להסיר את מנהל המטבח היחיד"':'')+' onclick="deactivateToran(\''+t.id+'\')">הסרה</button></div></div>';}).join(''):'<div class="empty-note-sm">אין תורנים פעילים</div>';
   return '<div class="admin-overlay" onclick="if(event.target===this)closeAdmin()"><div class="admin-panel"><div class="admin-head"><h2>ניהול תורנים</h2><button class="modal-close" onclick="closeAdmin()">✕</button></div><div class="admin-section"><h3>ממתינים לאישור ('+pending.length+')</h3>'+ph+'</div><div class="admin-section"><h3>תורנים פעילים ('+active.length+')</h3>'+ah+'</div><div class="admin-section"><h3>הוספת תורן ישירות</h3><div class="add-form"><input class="text-input" placeholder="שם מלא" oninput="S.newToranName=this.value"><input class="text-input" placeholder="מספר טלפון" oninput="S.newToranPhone=this.value"><div id="add-toran-error"></div><button class="btn btn-primary" onclick="addToranDirect()">הוספה</button></div></div></div></div>';
 }
 async function approveToran(id){await updateToranAndRefresh(id,{status:'approved'});}
 async function rejectToran(id){if(!confirm('לדחות?'))return;await updateToranAndRefresh(id,{status:'inactive'});}
 async function toggleKitchenAdmin(id,checked){if(!checked&&S.toranim.filter(function(x){return x.status==='approved'&&x.is_admin;}).length<=1){alert('לא ניתן להסיר את מנהל המטבח היחיד');render();return;}await updateToranAndRefresh(id,{is_admin:checked});}
 async function toggleCleaningAdmin(id,checked){await updateToranAndRefresh(id,{is_cleaning_admin:checked});}
+async function setDutyStatus(id,status){await updateToranAndRefresh(id,{duty_status:status});}
 async function deactivateToran(id){if(!confirm('להסיר?'))return;await updateToranAndRefresh(id,{status:'inactive'});}
 async function updateToranAndRefresh(id,patch){try{await api.updateToran(id,patch);await loadToranim();if(S.currentUser&&S.currentUser.id===id)S.currentUser=Object.assign({},S.currentUser,patch);render();}catch(e){alert('שגיאה: '+e.message);}}
 async function addToranDirect(){
@@ -811,24 +870,59 @@ async function loadFolderData(){
     const cycle=getCountingCycleRange();S.folderCycleLabel=cycle.label;
     const isK=S.activeModule==='kitchen';
     const rows=isK?(await api.getAssignmentsForCount(cycle.startYmd,cycle.endYmd)||[]):(await api.getCleaningForCount(cycle.startYmd,cycle.endYmd)||[]);
-    const counts={};rows.forEach(function(r){counts[r.toran_id]=(counts[r.toran_id]||0)+1;});
+    /* ספירה עם הבחנה בין ימים רגילים לשבת/יו"ט */
+    const regular={},yomtov={};
+    rows.forEach(function(r){
+      const dateField=isK?r.date:r.week_start;
+      if(!dateField)return;
+      const isSY=isK?isShabbatOrYomTov(dateField):false; /* בניקיון אין הבחנה שבת/יו"ט */
+      if(isSY){yomtov[r.toran_id]=(yomtov[r.toran_id]||0)+1;}
+      else{regular[r.toran_id]=(regular[r.toran_id]||0)+1;}
+    });
     const approved=S.toranim.filter(function(t){return t.status==='approved';});
-    S.folderData=approved.map(function(t){return{id:t.id,name:t.name,phone:t.phone,count:counts[t.id]||0};}).sort(function(a,b){return a.count-b.count;});
+    S.folderData=approved.map(function(t){
+      const ds=t.duty_status||'normal';
+      const reg=regular[t.id]||0, yt=yomtov[t.id]||0, total=reg+yt;
+      const effective=ds==='half'?total*2:total;
+      return{id:t.id,name:t.name,phone:t.phone,reg:reg,yt:yt,total:total,effective:effective,duty:ds};
+    }).sort(function(a,b){
+      if(a.duty==='exempt'&&b.duty!=='exempt')return 1;
+      if(b.duty==='exempt'&&a.duty!=='exempt')return -1;
+      return a.effective-b.effective;
+    });
   }catch(e){S.folderError=e.message;}
   S.folderLoading=false;render();
 }
 function renderFolderPanel(){
   const title=S.activeModule==='kitchen'?'תיקיית תורני מטבח':'תיקיית תורני ניקיון';
+  const isK=S.activeModule==='kitchen';
   let body;
   if(S.folderLoading)body='<div class="empty-note-sm">טוען...</div>';
   else if(S.folderError)body='<div class="error-text">שגיאה: '+esc(S.folderError)+'</div>';
   else if(!S.folderData||!S.folderData.length)body='<div class="empty-note-sm">אין תורנים פעילים</div>';
-  else body=S.folderData.map(function(t,i){
-    return '<div class="admin-row"><div><div class="name">'+(i+1)+'. '+esc(t.name)+'</div><div class="phone">'+esc(t.phone)+'</div></div>'
-      +'<div class="admin-row-actions"><span class="pill pill-confirm">'+t.count+' משמרות</span>'
-      +(S.activeModule==='kitchen'?'<button class="btn btn-primary btn-sm" onclick="startQuickAssign(\''+t.id+'\')">שיבוץ</button>':'')
-      +'</div></div>';
-  }).join('');
+  else{
+    let rank=0;
+    body=S.folderData.map(function(t){
+      const isExempt=t.duty==='exempt',isHalf=t.duty==='half';
+      if(!isExempt)rank++;
+      let countHtml;
+      if(isExempt){
+        countHtml='<span class="pill pill-exempt">פטור</span>';
+      }else if(isHalf){
+        const label=isK&&t.yt>0?t.total+' ('+t.yt+' שבת/יו״ט) × 2 = '+t.effective:t.total+' × 2 = '+t.effective;
+        countHtml='<span class="pill pill-half">חצי תורנות</span><span class="pill pill-confirm">'+label+'</span>';
+      }else{
+        const ytLabel=isK&&t.yt>0?' ('+t.yt+' שבת/יו״ט)':'';
+        countHtml='<span class="pill pill-confirm">'+t.total+' משמרות'+ytLabel+'</span>';
+      }
+      const nameHtml=isExempt?'<span style="color:#b91c1c;font-weight:700;">'+esc(t.name)+'</span>':esc(t.name);
+      return '<div class="admin-row'+(isExempt?' folder-exempt':'')+'">'
+        +'<div><div class="name">'+(isExempt?'':rank+'. ')+nameHtml+'</div><div class="phone">'+esc(t.phone)+'</div></div>'
+        +'<div class="admin-row-actions">'+countHtml
+        +(S.activeModule==='kitchen'?'<button class="btn btn-primary btn-sm" onclick="startQuickAssign(\''+t.id+'\')">שיבוץ</button>':'')
+        +'</div></div>';
+    }).join('');
+  }
   return '<div class="admin-overlay" onclick="if(event.target===this)closeFolder()"><div class="admin-panel"><div class="admin-head"><h2>'+title+'</h2><button class="modal-close" onclick="closeFolder()">✕</button></div><div class="admin-section"><h3>משמרות '+esc(S.folderCycleLabel||'')+' — מהכי פחות לכי יותר</h3>'+body+'</div></div></div>';
 }
 
