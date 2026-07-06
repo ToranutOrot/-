@@ -496,6 +496,7 @@ const S={
   cleaningAssignments:{}, cleaningViewWeekStart:null, cleaningModalWeek:null, cleaningAssignQuery:'',
   searchQuery:'', banners:[], dismissedBanners:{},
   adminOpen:false, newToranName:'',newToranPhone:'',
+  adminBulkMode:false, adminSelected:{}, adminBulkGrade:1, adminBulkDuty:'normal',
   folderOpen:false,folderLoading:false,folderData:null,folderError:null,folderCycleLabel:'',
   quickAssignToranId:null
 };
@@ -801,7 +802,8 @@ function renderModal(){
     else if(!im&&a.swap_requested)bt+='<button class="btn btn-confirm btn-sm" onclick="claimSwap(\''+a.id+'\')">החלף</button>';
     if(isA)bt+='<button class="remove-x" onclick="removeAssignment(\''+a.id+'\')">✕</button>';
     const tag=a.swap_requested?' <span class="pill pill-wait">מחפש/ת מחליף</span>':'';
-    return '<div class="assigned-row"><span>'+esc(a.name)+tag+'</span><span class="row-actions">'+bt+'</span></div>';
+    const tor=S.toranim.find(function(x){return x.id===a.toran_id;});const g=tor?tor.grade||1:1;
+    return '<div class="assigned-row"><span style="display:flex;align-items:center;gap:7px;"><span class="gb gb'+g+'" style="font-size:10px;padding:1px 6px;">'+esc(GRADE_LETTERS[g])+'</span>'+esc(a.name)+tag+'</span><span class="row-actions">'+bt+'</span></div>';
   }).join(''):'<div class="empty-note">אין עדיין תורנים משובצים</div>';
   const box=isA?'<label class="field-label">הוספת תורן</label><div class="assign-box"><input class="text-input" placeholder="הקלידו שם תורן רשום..." oninput="updateAssignSuggestions(this.value)" autocomplete="off"><div id="assign-suggestions-slot"></div></div>':(!isFut?'<div class="empty-note-sm">יום זה כבר עבר.</div>':'<div class="empty-note-sm">רק מנהלי מטבח יכולים לשבץ.</div>');
   return '<div class="modal-overlay" onclick="if(event.target===this)closeModal()"><div class="modal-box"><div class="modal-head"><div><div class="g-date">'+formatGregFull(ds)+'</div><div class="h-date">'+formatHebFull(ds)+'</div></div><button class="modal-close" onclick="closeModal()">✕</button></div><div class="modal-body">'+qh+'<div class="assigned-list">'+rh+'</div>'+box+'</div></div></div>';
@@ -854,7 +856,8 @@ function renderCleaningModal(){
     else if(!im&&a.swap_requested)bt+='<button class="btn btn-confirm btn-sm" onclick="claimCleaningSwap(\''+a.id+'\')">החלף</button>';
     if(isA)bt+='<button class="remove-x" onclick="removeCleaningAssignment(\''+a.id+'\')">✕</button>';
     const tag=a.swap_requested?' <span class="pill pill-wait">מחפש/ת מחליף</span>':'';
-    return '<div class="assigned-row"><span>'+esc(a.name)+tag+'</span><span class="row-actions">'+bt+'</span></div>';
+    const tor=S.toranim.find(function(x){return x.id===a.toran_id;});const g=tor?tor.grade||1:1;
+    return '<div class="assigned-row"><span style="display:flex;align-items:center;gap:7px;"><span class="gb gb'+g+'" style="font-size:10px;padding:1px 6px;">'+esc(GRADE_LETTERS[g])+'</span>'+esc(a.name)+tag+'</span><span class="row-actions">'+bt+'</span></div>';
   }).join(''):'<div class="empty-note">אין עדיין תורנים משובצים לשבוע זה</div>';
   const box=isA?'<label class="field-label">הוספת תורן</label><div class="assign-box"><input class="text-input" placeholder="הקלידו שם תורן רשום..." oninput="updateCleaningSuggestions(this.value)" autocomplete="off"><div id="cleaning-assign-slot"></div></div>':(!isFut?'<div class="empty-note-sm">שבוע זה כבר עבר.</div>':'<div class="empty-note-sm">רק מנהלי ניקיון יכולים לשבץ.</div>');
   return '<div class="modal-overlay" onclick="if(event.target===this)closeCleaningModal()"><div class="modal-box"><div class="modal-head"><div><div class="g-date">'+lb.gregPart+'</div><div class="h-date">'+lb.hebPart+'</div></div><button class="modal-close" onclick="closeCleaningModal()">✕</button></div><div class="modal-body"><div class="assigned-list">'+rh+'</div>'+box+'</div></div></div>';
@@ -883,14 +886,45 @@ async function claimCleaningSwap(id){
 }
 
 /* ===== פאנל ניהול (מנהלי מטבח בלבד) ===== */
-function openAdmin(){S.adminOpen=true;S.newToranName='';S.newToranPhone='';render();}
-function closeAdmin(){S.adminOpen=false;render();}
+function openAdmin(){S.adminOpen=true;S.newToranName='';S.newToranPhone='';S.adminBulkMode=false;S.adminSelected={};render();}
+function closeAdmin(){S.adminOpen=false;S.adminBulkMode=false;S.adminSelected={};render();}
 function renderAdminPanel(){
   const pending=S.toranim.filter(function(t){return t.status==='pending';}),active=S.toranim.filter(function(t){return t.status==='approved';});
   const kac=active.filter(function(t){return t.is_admin;}).length;
+  const selectedIds=Object.keys(S.adminSelected).filter(function(id){return S.adminSelected[id];});
   const ph=pending.length?pending.map(function(t){return '<div class="admin-row"><div><div class="name">'+esc(t.name)+'</div><div class="phone">'+esc(t.phone)+'</div></div><div class="admin-row-actions"><button class="btn btn-confirm btn-sm" onclick="approveToran(\''+t.id+'\')">אישור</button><button class="btn btn-danger btn-sm" onclick="rejectToran(\''+t.id+'\')">דחייה</button></div></div>';}).join(''):'<div class="empty-note-sm">אין בקשות ממתינות</div>';
-  const ah=active.length?active.slice().sort(function(a,b){return (a.grade||1)-(b.grade||1);}).map(function(t){const ilka=t.is_admin&&kac<=1;const ds=t.duty_status||'normal';const g=t.grade||1;return '<div class="admin-row" style="flex-wrap:wrap;gap:6px;"><div style="display:flex;align-items:center;gap:7px;"><span class="gb gb'+g+'" style="flex-shrink:0;">'+esc(GRADE_LETTERS[g])+'</span><div><div class="name">'+esc(t.name)+'</div><div class="phone">'+esc(t.phone)+'</div></div></div><div class="admin-row-actions" style="flex-wrap:wrap;gap:5px;"><label class="toggle-wrap"><input type="checkbox" '+(t.is_admin?'checked':'')+' onchange="toggleKitchenAdmin(\''+t.id+'\',this.checked)"> מנהל מטבח</label><label class="toggle-wrap"><input type="checkbox" '+(t.is_cleaning_admin?'checked':'')+' onchange="toggleCleaningAdmin(\''+t.id+'\',this.checked)"> מנהל ניקיון</label><select style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:3px 6px;background:var(--surface);" onchange="setGrade(\''+t.id+'\',Number(this.value))">'+[1,2,3,4,5,6].map(function(gi){return '<option value="'+gi+'" '+(g===gi?'selected':'')+'>'+GRADE_LABELS[gi]+'</option>';}).join('')+'</select><select style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:3px 6px;background:var(--surface);" onchange="setDutyStatus(\''+t.id+'\',this.value)"><option value="normal" '+(ds==='normal'?'selected':'')+'>תורנות רגילה</option><option value="half" '+(ds==='half'?'selected':'')+'>חצי תורנות</option><option value="exempt" '+(ds==='exempt'?'selected':'')+'>פטור תורנות</option></select><button class="btn btn-danger btn-sm" '+(ilka?'disabled title="לא ניתן להסיר את מנהל המטבח היחיד"':'')+' onclick="deactivateToran(\''+t.id+'\')">הסרה</button></div></div>';}).join(''):'<div class="empty-note-sm">אין תורנים פעילים</div>';
-  return '<div class="admin-overlay" onclick="if(event.target===this)closeAdmin()"><div class="admin-panel"><div class="admin-head"><h2>ניהול תורנים</h2><button class="modal-close" onclick="closeAdmin()">✕</button></div><div class="admin-section"><h3>ממתינים לאישור ('+pending.length+')</h3>'+ph+'</div><div class="admin-section"><h3>תורנים פעילים ('+active.length+')</h3>'+ah+'</div><div class="admin-section"><h3>הוספת תורן ישירות</h3><div class="add-form"><input class="text-input" placeholder="שם מלא" oninput="S.newToranName=this.value"><input class="text-input" placeholder="מספר טלפון" oninput="S.newToranPhone=this.value"><div id="add-toran-error"></div><button class="btn btn-primary" onclick="addToranDirect()">הוספה</button></div></div></div></div>';
+  /* ---- bulk action bar ---- */
+  const bulkBar=S.adminBulkMode&&selectedIds.length?'<div style="background:var(--accent-soft);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;">'
+    +'<span style="font-size:13px;font-weight:700;">'+selectedIds.length+' נבחרו —</span>'
+    +'<select style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:3px 6px;" id="bulk-grade-sel">'+[1,2,3,4,5,6].map(function(g){return '<option value="'+g+'">'+esc(GRADE_LABELS[g])+'</option>';}).join('')+'</select>'
+    +'<button class="btn btn-primary btn-sm" onclick="applyBulkGrade()">שנה שיעור</button>'
+    +'<button class="btn btn-ghost btn-sm" onclick="applyBulkKitchenAdmin(true)">מנהל מטבח ✓</button>'
+    +'<button class="btn btn-ghost btn-sm" onclick="applyBulkKitchenAdmin(false)">הסר מנהל מטבח</button>'
+    +'<button class="btn btn-ghost btn-sm" onclick="applyBulkDuty(\'exempt\')">פטור</button>'
+    +'<button class="btn btn-ghost btn-sm" onclick="applyBulkDuty(\'normal\')">תורנות רגילה</button>'
+    +'<button class="btn btn-danger btn-sm" onclick="applyBulkDeactivate()">הסרה מהמערכת</button>'
+  +'</div>':'';
+  const ah=active.length?active.slice().sort(function(a,b){return (a.grade||1)-(b.grade||1);}).map(function(t){
+    const ilka=t.is_admin&&kac<=1,ds=t.duty_status||'normal',g=t.grade||1;
+    const isSelected=!!S.adminSelected[t.id];
+    const cb=S.adminBulkMode?'<input type="checkbox" style="margin-left:8px;width:16px;height:16px;cursor:pointer;" '+(isSelected?'checked':'')+' onchange="toggleAdminSelect(\''+t.id+'\',this.checked)">':'';
+    return '<div class="admin-row" style="flex-wrap:wrap;gap:6px;background:'+(isSelected?'var(--accent-soft)':'')+';">'
+      +'<div style="display:flex;align-items:center;gap:7px;">'+cb+'<span class="gb gb'+g+'" style="flex-shrink:0;">'+esc(GRADE_LETTERS[g])+'</span><div><div class="name">'+esc(t.name)+'</div><div class="phone">'+esc(t.phone)+'</div></div></div>'
+      +'<div class="admin-row-actions" style="flex-wrap:wrap;gap:5px;">'
+      +'<label class="toggle-wrap"><input type="checkbox" '+(t.is_admin?'checked':'')+' onchange="toggleKitchenAdmin(\''+t.id+'\',this.checked)"> מנהל מטבח</label>'
+      +'<label class="toggle-wrap"><input type="checkbox" '+(t.is_cleaning_admin?'checked':'')+' onchange="toggleCleaningAdmin(\''+t.id+'\',this.checked)"> מנהל ניקיון</label>'
+      +'<select style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:3px 6px;background:var(--surface);" onchange="setGrade(\''+t.id+'\',Number(this.value))">'+[1,2,3,4,5,6].map(function(gi){return '<option value="'+gi+'" '+(g===gi?'selected':'')+'>'+GRADE_LABELS[gi]+'</option>';}).join('')+'</select>'
+      +'<select style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:3px 6px;background:var(--surface);" onchange="setDutyStatus(\''+t.id+'\',this.value)"><option value="normal" '+(ds==='normal'?'selected':'')+'>תורנות רגילה</option><option value="half" '+(ds==='half'?'selected':'')+'>חצי תורנות</option><option value="exempt" '+(ds==='exempt'?'selected':'')+'>פטור תורנות</option></select>'
+      +'<button class="btn btn-danger btn-sm" '+(ilka?'disabled':'')+' onclick="deactivateToran(\''+t.id+'\')">הסרה</button>'
+      +'</div></div>';
+  }).join(''):'<div class="empty-note-sm">אין תורנים פעילים</div>';
+  const bulkToggle='<button class="btn '+(S.adminBulkMode?'btn-primary':'btn-ghost')+' btn-sm" onclick="toggleAdminBulkMode()">'+(S.adminBulkMode?'סיום בחירה':'בחירה מרובה')+'</button>'+(S.adminBulkMode&&selectedIds.length?'<button class="btn btn-ghost btn-sm" onclick="S.adminSelected={};render()">נקה בחירה</button>':'');
+  return '<div class="admin-overlay" onclick="if(event.target===this)closeAdmin()"><div class="admin-panel">'
+    +'<div class="admin-head"><h2>ניהול תורנים</h2><button class="modal-close" onclick="closeAdmin()">✕</button></div>'
+    +'<div class="admin-section"><h3>ממתינים לאישור ('+pending.length+')</h3>'+ph+'</div>'
+    +'<div class="admin-section"><h3 style="display:flex;justify-content:space-between;align-items:center;">תורנים פעילים ('+active.length+')'+bulkToggle+'</h3>'+bulkBar+ah+'</div>'
+    +'<div class="admin-section"><h3>הוספת תורן ישירות</h3><div class="add-form"><input class="text-input" placeholder="שם מלא" oninput="S.newToranName=this.value"><input class="text-input" placeholder="מספר טלפון" oninput="S.newToranPhone=this.value"><div id="add-toran-error"></div><button class="btn btn-primary" onclick="addToranDirect()">הוספה</button></div></div>'
+  +'</div></div>';
 }
 async function approveToran(id){await updateToranAndRefresh(id,{status:'approved'});}
 async function rejectToran(id){if(!confirm('לדחות?'))return;await updateToranAndRefresh(id,{status:'inactive'});}
@@ -898,6 +932,33 @@ async function toggleKitchenAdmin(id,checked){if(!checked&&S.toranim.filter(func
 async function toggleCleaningAdmin(id,checked){await updateToranAndRefresh(id,{is_cleaning_admin:checked});}
 async function setDutyStatus(id,status){await updateToranAndRefresh(id,{duty_status:status});}
 async function setGrade(id,grade){await updateToranAndRefresh(id,{grade:grade,grade_year:getCountingCycleRange().cy});}
+
+/* ---- בחירה מרובה ---- */
+function toggleAdminBulkMode(){S.adminBulkMode=!S.adminBulkMode;if(!S.adminBulkMode)S.adminSelected={};render();}
+function toggleAdminSelect(id,checked){S.adminSelected[id]=checked;render();}
+function getSelectedIds(){return Object.keys(S.adminSelected).filter(function(id){return S.adminSelected[id];});}
+async function applyBulkGrade(){
+  const sel=document.getElementById('bulk-grade-sel');if(!sel)return;
+  const grade=Number(sel.value),ids=getSelectedIds();if(!ids.length)return;
+  const cy=getCountingCycleRange().cy;
+  for(let i=0;i<ids.length;i++){try{await api.updateToran(ids[i],{grade:grade,grade_year:cy});}catch(e){}}
+  S.adminSelected={};S.adminBulkMode=false;await loadToranim();render();
+}
+async function applyBulkKitchenAdmin(val){
+  const ids=getSelectedIds();if(!ids.length)return;
+  for(let i=0;i<ids.length;i++){try{await api.updateToran(ids[i],{is_admin:val});}catch(e){}}
+  S.adminSelected={};S.adminBulkMode=false;await loadToranim();render();
+}
+async function applyBulkDuty(status){
+  const ids=getSelectedIds();if(!ids.length)return;
+  for(let i=0;i<ids.length;i++){try{await api.updateToran(ids[i],{duty_status:status});}catch(e){}}
+  S.adminSelected={};S.adminBulkMode=false;await loadToranim();render();
+}
+async function applyBulkDeactivate(){
+  const ids=getSelectedIds();if(!ids.length||!confirm('להסיר '+ids.length+' תורנים מהמערכת?'))return;
+  for(let i=0;i<ids.length;i++){try{await api.updateToran(ids[i],{status:'inactive'});}catch(e){}}
+  S.adminSelected={};S.adminBulkMode=false;await loadToranim();render();
+}
 async function deactivateToran(id){if(!confirm('להסיר?'))return;await updateToranAndRefresh(id,{status:'inactive'});}
 async function updateToranAndRefresh(id,patch){try{await api.updateToran(id,patch);await loadToranim();if(S.currentUser&&S.currentUser.id===id)S.currentUser=Object.assign({},S.currentUser,patch);render();}catch(e){alert('שגיאה: '+e.message);}}
 async function addToranDirect(){
@@ -927,13 +988,24 @@ async function loadFolderData(){
   try{
     const cycle=getCountingCycleRange();S.folderCycleLabel=cycle.label;
     const cy=cycle.cy;
-    /* קידום אוטומטי לשיעור הבא כשהשנה מתחדשת */
+    /* קידום אוטומטי לשיעור הבא — שיעורים ב, ה, ו מסיימים ומוסרים מהמערכת */
+    const DEACTIVATE_ON_PROMOTION=[2,5,6]; /* ב→ג, ה→ו, ו→מסיים */
     const needsPromotion=S.toranim.filter(function(t){return t.status==='approved'&&(t.grade_year||0)<cy;});
     for(let i=0;i<needsPromotion.length;i++){
-      const t=needsPromotion[i];
-      const newGrade=Math.min((t.grade||1)+1,6);
-      try{await api.updateToran(t.id,{grade:newGrade,grade_year:cy});t.grade=newGrade;t.grade_year=cy;}catch(e){}
+      const t=needsPromotion[i];const oldGrade=t.grade||1;
+      const shouldDeactivate=DEACTIVATE_ON_PROMOTION.indexOf(oldGrade)!==-1;
+      try{
+        if(shouldDeactivate){
+          await api.updateToran(t.id,{status:'inactive',grade_year:cy});
+          t.status='inactive';
+        }else{
+          const ng=Math.min(oldGrade+1,6);
+          await api.updateToran(t.id,{grade:ng,grade_year:cy});t.grade=ng;t.grade_year=cy;
+        }
+      }catch(e){}
     }
+    /* נסנן מחוץ לרשימה את מי שהוסר */
+    S.toranim=S.toranim.filter(function(t){return t.status!=='inactive'||t.id===S.currentUser.id;});
     const isK=S.activeModule==='kitchen';
     const rows=isK?(await api.getAssignmentsForCount(cycle.startYmd,cycle.endYmd)||[]):(await api.getCleaningForCount(cycle.startYmd,cycle.endYmd)||[]);
     const regular={},yomtov={};
