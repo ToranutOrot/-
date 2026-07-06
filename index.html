@@ -507,6 +507,7 @@ function render(){
   else if(S.screen==='pending')root.innerHTML=renderPendingScreen();
   else if(S.screen==='set_pin')root.innerHTML=renderSetPinScreen();
   else if(S.screen==='enter_pin')root.innerHTML=renderEnterPinScreen();
+  else if(S.screen==='set_grade')root.innerHTML=renderSetGradeScreen();
   else if(S.screen==='app')root.innerHTML=renderAppScreen();
 }
 
@@ -523,7 +524,6 @@ function renderLoginScreen(){
     +'<p class="auth-sub">הזינו שם מלא ומספר טלפון. אם זו הכניסה הראשונה, ייפתח כרטיס ממתין לאישור מנהל.</p>'
     +'<div class="auth-field"><label class="field-label">שם מלא</label><input class="text-input" type="text" value="'+esc(S.loginName)+'" oninput="S.loginName=this.value" placeholder="לדוגמה: ישראל ישראלי"></div>'
     +'<div class="auth-field"><label class="field-label">מספר טלפון</label><input class="text-input" type="tel" value="'+esc(S.loginPhone)+'" oninput="S.loginPhone=this.value" onkeydown="if(event.key===\'Enter\')submitLogin()" placeholder="050-1234567"></div>'
-    +'<div class="auth-field"><label class="field-label">שיעור (לתלמידים חדשים — איזה שיעור בתחילת אלול?)</label><select class="text-input" onchange="S.loginGrade=Number(this.value)">'+[1,2,3,4,5,6].map(function(g){return '<option value="'+g+'" '+(S.loginGrade===g?'selected':'')+'>'+GRADE_LABELS[g]+'</option>';}).join('')+'</select></div>'
     +'<label style="display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer;margin-bottom:4px;"><input type="checkbox" '+(S.rememberMe?'checked':'')+' onchange="S.rememberMe=this.checked"> זכור אותי במכשיר זה</label>'
     +(S.loginError?'<div class="error-text">'+esc(S.loginError)+'</div>':'')
     +'<button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px;" onclick="submitLogin()" '+(S.loading?'disabled':'')+'>'+(S.loading?'<span class="spinner"></span> מתחבר...':'כניסה')+'</button>'
@@ -550,7 +550,7 @@ async function submitLogin(){
     }else{
       const existing=await api.getAllToranim();
       const isFirst=!existing||existing.length===0;
-      const created=await api.insertToran({name:name,phone:phone,status:isFirst?'approved':'pending',is_admin:isFirst,is_cleaning_admin:false,grade:S.loginGrade,grade_year:getRegistrationGradeYear()});
+      const created=await api.insertToran({name:name,phone:phone,status:isFirst?'approved':'pending',is_admin:isFirst,is_cleaning_admin:false});
       S.currentUser=created;
       if(isFirst){S.loading=false;S.pinInput='';S.pinConfirm='';S.pinError='';S.screen='set_pin';render();}
       else{S.loading=false;S.screen='pending';render();}
@@ -622,6 +622,35 @@ function logout(){
 
 /* ===== כניסה לאפליקציה ===== */
 async function enterApp(){
+  /* אם השיעור לא הוגדר אף פעם — הצג מסך הגדרת שיעור */
+  if(!(S.currentUser.grade_year)||S.currentUser.grade_year===0){
+    S.loginGrade=S.currentUser.grade||1;
+    S.loading=false;S.screen='set_grade';render();return;
+  }
+  await loadAndEnterApp();
+}
+function renderSetGradeScreen(){
+  return '<div class="center-screen"><div class="card auth-card">'
+    +'<div class="auth-eyebrow">הגדרת שיעור — פעם אחת בלבד</div>'
+    +'<h1 class="auth-title">שלום, '+esc(S.currentUser.name)+'</h1>'
+    +'<p class="auth-sub">בחרו את השיעור שתהיה/תהיי בתחילת אלול. לאחר האישור לא תוכלו לשנות בעצמכם — רק מנהל יוכל.</p>'
+    +'<div class="auth-field"><label class="field-label">שיעור בתחילת אלול</label>'
+      +'<select class="text-input" onchange="S.loginGrade=Number(this.value)">'+[1,2,3,4,5,6].map(function(g){return '<option value="'+g+'" '+(S.loginGrade===g?'selected':'')+'>'+esc(GRADE_LABELS[g])+'</option>';}).join('')+'</select>'
+    +'</div>'
+    +(S.loading?'<div style="text-align:center;margin-top:8px;"><span class="spinner" style="border-color:var(--accent-soft);border-top-color:var(--accent);width:22px;height:22px;display:inline-block;border-width:3px;border-radius:50%;border-style:solid;animation:spin .7s linear infinite;"></span></div>':'')
+    +'<button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:12px;" onclick="submitSetGrade()" '+(S.loading?'disabled':'')+'>אישור וכניסה</button>'
+  +'</div></div>';
+}
+async function submitSetGrade(){
+  S.loading=true;render();
+  try{
+    const gy=getRegistrationGradeYear();
+    await api.updateToran(S.currentUser.id,{grade:S.loginGrade,grade_year:gy});
+    S.currentUser.grade=S.loginGrade;S.currentUser.grade_year=gy;
+    await loadAndEnterApp();
+  }catch(e){S.loading=false;alert('שגיאה בשמירת השיעור: '+e.message);render();}
+}
+async function loadAndEnterApp(){
   S.screen='app';
   const t=new Date();
   if(!S.viewYear){S.viewYear=t.getFullYear();S.viewMonth=t.getMonth()+1;}
