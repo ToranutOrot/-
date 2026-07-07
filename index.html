@@ -721,7 +721,7 @@ function renderHeader(){
     +'<div class="header-search" id="header-search-wrap"><input type="text" placeholder="חיפוש — מתי אני משובץ?" value="'+esc(S.searchQuery)+'" oninput="updateSearchPanel(this.value)" onfocus="updateSearchPanel(this.value)"><div id="search-panel-slot"></div></div>'
     +'<div class="header-actions">'
       +'<div class="header-user">'+(isCurAdmin?'<span class="admin-tag">'+esc(adminLbl)+'</span>':'')+'<b>'+esc(u.name)+'</b></div>'
-      +(isKA?'<button class="btn btn-ghost btn-sm" onclick="openAdmin()">ניהול</button>':'')
+      +(isCurAdmin?'<button class="btn btn-ghost btn-sm" onclick="openAdmin()">ניהול</button>':'')
       +(isCurAdmin?'<button class="btn btn-ghost btn-sm" onclick="openFolder()">תיקיית תורנים</button>':'')
       +'<button class="btn btn-ghost btn-sm" onclick="refreshApp()" title="רענון">↻</button>'
       +'<button class="btn btn-ghost btn-sm" onclick="logout()">יציאה</button>'
@@ -889,43 +889,58 @@ async function claimCleaningSwap(id){
 function openAdmin(){S.adminOpen=true;S.newToranName='';S.newToranPhone='';S.adminBulkMode=false;S.adminSelected={};render();}
 function closeAdmin(){S.adminOpen=false;S.adminBulkMode=false;S.adminSelected={};render();}
 function renderAdminPanel(){
-  const pending=S.toranim.filter(function(t){return t.status==='pending';}),active=S.toranim.filter(function(t){return t.status==='approved';});
+  const isK=S.activeModule==='kitchen';
+  const u=S.currentUser;
+  const isKA=!!u.is_admin, isCA=!!u.is_cleaning_admin;
+  const pending=S.toranim.filter(function(t){return t.status==='pending';});
+  const active=S.toranim.filter(function(t){return t.status==='approved';});
   const kac=active.filter(function(t){return t.is_admin;}).length;
   const selectedIds=Object.keys(S.adminSelected).filter(function(id){return S.adminSelected[id];});
-  const ph=pending.length?pending.map(function(t){return '<div class="admin-row"><div><div class="name">'+esc(t.name)+'</div><div class="phone">'+esc(t.phone)+'</div></div><div class="admin-row-actions"><button class="btn btn-confirm btn-sm" onclick="approveToran(\''+t.id+'\')">אישור</button><button class="btn btn-danger btn-sm" onclick="rejectToran(\''+t.id+'\')">דחייה</button></div></div>';}).join(''):'<div class="empty-note-sm">אין בקשות ממתינות</div>';
-  /* ---- bulk action bar ---- */
+
+  /* ---- כותרת פאנל ---- */
+  const title=isK?'ניהול מטבח':'ניהול ניקיון';
+
+  /* ---- ממתינים לאישור (מנהל מטבח בלבד) ---- */
+  const pendingSection=isK&&isKA?'<div class="admin-section"><h3>ממתינים לאישור ('+pending.length+')</h3>'+(pending.length?pending.map(function(t){return '<div class="admin-row"><div><div class="name">'+esc(t.name)+'</div><div class="phone">'+esc(t.phone)+'</div></div><div class="admin-row-actions"><button class="btn btn-confirm btn-sm" onclick="approveToran(\''+t.id+'\')">אישור</button><button class="btn btn-danger btn-sm" onclick="rejectToran(\''+t.id+'\')">דחייה</button></div></div>';}).join(''):'<div class="empty-note-sm">אין בקשות ממתינות</div>')+'</div>':'';
+
+  /* ---- bulk bar (מותאם למודול) ---- */
   const bulkBar=S.adminBulkMode&&selectedIds.length?'<div style="background:var(--accent-soft);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;">'
     +'<span style="font-size:13px;font-weight:700;">'+selectedIds.length+' נבחרו —</span>'
-    +'<select style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:3px 6px;" id="bulk-grade-sel">'+[1,2,3,4,5,6].map(function(g){return '<option value="'+g+'">'+esc(GRADE_LABELS[g])+'</option>';}).join('')+'</select>'
-    +'<button class="btn btn-primary btn-sm" onclick="applyBulkGrade()">שנה שיעור</button>'
-    +'<button class="btn btn-ghost btn-sm" onclick="applyBulkKitchenAdmin(true)">מנהל מטבח ✓</button>'
-    +'<button class="btn btn-ghost btn-sm" onclick="applyBulkKitchenAdmin(false)">הסר מנהל מטבח</button>'
-    +'<button class="btn btn-ghost btn-sm" onclick="applyBulkDuty(\'kitchen\',\'exempt\')">פטור מטבח</button>'
-    +'<button class="btn btn-ghost btn-sm" onclick="applyBulkDuty(\'cleaning\',\'exempt\')">פטור ניקיון</button>'
-    +'<button class="btn btn-ghost btn-sm" onclick="applyBulkDuty(\'both\',\'normal\')">הסר פטורים</button>'
-    +'<button class="btn btn-danger btn-sm" onclick="applyBulkDeactivate()">הסרה מהמערכת</button>'
+    +(isK&&isKA?'<select style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:3px 6px;" id="bulk-grade-sel">'+[1,2,3,4,5,6].map(function(g){return '<option value="'+g+'">'+esc(GRADE_LABELS[g])+'</option>';}).join('')+'</select><button class="btn btn-primary btn-sm" onclick="applyBulkGrade()">שנה שיעור</button>':'')
+    +(isK&&isKA?'<button class="btn btn-ghost btn-sm" onclick="applyBulkKitchenAdmin(true)">מנהל מטבח ✓</button><button class="btn btn-ghost btn-sm" onclick="applyBulkKitchenAdmin(false)">הסר מנהל מטבח</button>':'')
+    +(!isK&&isCA?'<button class="btn btn-ghost btn-sm" onclick="applyBulkCleaningAdmin(true)">מנהל ניקיון ✓</button><button class="btn btn-ghost btn-sm" onclick="applyBulkCleaningAdmin(false)">הסר מנהל ניקיון</button>':'')
+    +(isK&&isKA?'<button class="btn btn-ghost btn-sm" onclick="applyBulkDuty(\'kitchen\',\'exempt\')">פטור מטבח</button><button class="btn btn-ghost btn-sm" onclick="applyBulkDuty(\'kitchen\',\'normal\')">הסר פטור מטבח</button>':'')
+    +(!isK&&isCA?'<button class="btn btn-ghost btn-sm" onclick="applyBulkDuty(\'cleaning\',\'exempt\')">פטור ניקיון</button><button class="btn btn-ghost btn-sm" onclick="applyBulkDuty(\'cleaning\',\'normal\')">הסר פטור ניקיון</button>':'')
+    +(isK&&isKA?'<button class="btn btn-danger btn-sm" onclick="applyBulkDeactivate()">הסרה מהמערכת</button>':'')
   +'</div>':'';
+
+  /* ---- רשימת תורנים פעילים ---- */
   const ah=active.length?active.slice().sort(function(a,b){return (a.grade||1)-(b.grade||1);}).map(function(t){
-    const ilka=t.is_admin&&kac<=1,kds=t.duty_status||'normal',cds=t.cleaning_duty_status||'normal',g=t.grade||1;
+    const kds=t.duty_status||'normal', cds=t.cleaning_duty_status||'normal', g=t.grade||1;
+    const ilka=t.is_admin&&kac<=1;
     const isSelected=!!S.adminSelected[t.id];
     const cb=S.adminBulkMode?'<input type="checkbox" style="margin-left:8px;width:16px;height:16px;cursor:pointer;" '+(isSelected?'checked':'')+' onchange="toggleAdminSelect(\''+t.id+'\',this.checked)">':'';
     return '<div class="admin-row" style="flex-wrap:wrap;gap:6px;background:'+(isSelected?'var(--accent-soft)':'')+';">'
       +'<div style="display:flex;align-items:center;gap:7px;">'+cb+'<span class="gb gb'+g+'" style="flex-shrink:0;">'+esc(GRADE_LETTERS[g])+'</span><div><div class="name">'+esc(t.name)+'</div><div class="phone">'+esc(t.phone)+'</div></div></div>'
       +'<div class="admin-row-actions" style="flex-wrap:wrap;gap:5px;">'
-      +'<label class="toggle-wrap"><input type="checkbox" '+(t.is_admin?'checked':'')+' onchange="toggleKitchenAdmin(\''+t.id+'\',this.checked)"> מנהל מטבח</label>'
-      +'<label class="toggle-wrap"><input type="checkbox" '+(t.is_cleaning_admin?'checked':'')+' onchange="toggleCleaningAdmin(\''+t.id+'\',this.checked)"> מנהל ניקיון</label>'
-      +'<select style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:3px 6px;background:var(--surface);" onchange="setGrade(\''+t.id+'\',Number(this.value))">'+[1,2,3,4,5,6].map(function(gi){return '<option value="'+gi+'" '+(g===gi?'selected':'')+'>'+GRADE_LABELS[gi]+'</option>';}).join('')+'</select>'
-      +'<select title="מטבח" style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:3px 6px;background:var(--surface);" onchange="setDutyStatus(\''+t.id+'\',this.value)"><option value="normal" '+(kds==='normal'?'selected':'')+'>🍳 רגיל</option><option value="half" '+(kds==='half'?'selected':'')+'>🍳 חצי</option><option value="exempt" '+(kds==='exempt'?'selected':'')+'>🍳 פטור</option></select>'
-      +'<select title="ניקיון" style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:3px 6px;background:var(--surface);" onchange="setCleaningDutyStatus(\''+t.id+'\',this.value)"><option value="normal" '+(cds==='normal'?'selected':'')+'>🧹 רגיל</option><option value="half" '+(cds==='half'?'selected':'')+'>🧹 חצי</option><option value="exempt" '+(cds==='exempt'?'selected':'')+'>🧹 פטור</option></select>'
-      +'<button class="btn btn-danger btn-sm" '+(ilka?'disabled':'')+' onclick="deactivateToran(\''+t.id+'\')">הסרה</button>'
+      +(isK&&isKA?'<label class="toggle-wrap"><input type="checkbox" '+(t.is_admin?'checked':'')+' onchange="toggleKitchenAdmin(\''+t.id+'\',this.checked)"> מנהל מטבח</label>':'')
+      +(!isK&&isCA?'<label class="toggle-wrap"><input type="checkbox" '+(t.is_cleaning_admin?'checked':'')+' onchange="toggleCleaningAdmin(\''+t.id+'\',this.checked)"> מנהל ניקיון</label>':'')
+      +(isK&&isKA?'<select style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:3px 6px;background:var(--surface);" onchange="setGrade(\''+t.id+'\',Number(this.value))">'+[1,2,3,4,5,6].map(function(gi){return '<option value="'+gi+'" '+(g===gi?'selected':'')+'>'+GRADE_LABELS[gi]+'</option>';}).join('')+'</select>':'')
+      +(isK&&isKA?'<select style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:3px 6px;background:var(--surface);" onchange="setDutyStatus(\''+t.id+'\',this.value)"><option value="normal" '+(kds==='normal'?'selected':'')+'>🍳 רגיל</option><option value="half" '+(kds==='half'?'selected':'')+'>🍳 חצי</option><option value="exempt" '+(kds==='exempt'?'selected':'')+'>🍳 פטור</option></select>':'')
+      +(!isK&&isCA?'<select style="font-size:12px;border:1px solid var(--border);border-radius:6px;padding:3px 6px;background:var(--surface);" onchange="setCleaningDutyStatus(\''+t.id+'\',this.value)"><option value="normal" '+(cds==='normal'?'selected':'')+'>🧹 רגיל</option><option value="half" '+(cds==='half'?'selected':'')+'>🧹 חצי</option><option value="exempt" '+(cds==='exempt'?'selected':'')+'>🧹 פטור</option></select>':'')
+      +(isK&&isKA?'<button class="btn btn-danger btn-sm" '+(ilka?'disabled':'')+' onclick="deactivateToran(\''+t.id+'\')">הסרה</button>':'')
       +'</div></div>';
   }).join(''):'<div class="empty-note-sm">אין תורנים פעילים</div>';
+
   const bulkToggle='<button class="btn '+(S.adminBulkMode?'btn-primary':'btn-ghost')+' btn-sm" onclick="toggleAdminBulkMode()">'+(S.adminBulkMode?'סיום בחירה':'בחירה מרובה')+'</button>'+(S.adminBulkMode&&selectedIds.length?'<button class="btn btn-ghost btn-sm" onclick="S.adminSelected={};render()">נקה בחירה</button>':'');
+
+  const addSection=isK&&isKA?'<div class="admin-section"><h3>הוספת תורן ישירות</h3><div class="add-form"><input class="text-input" placeholder="שם מלא" oninput="S.newToranName=this.value"><input class="text-input" placeholder="מספר טלפון" oninput="S.newToranPhone=this.value"><div id="add-toran-error"></div><button class="btn btn-primary" onclick="addToranDirect()">הוספה</button></div></div>':'';
+
   return '<div class="admin-overlay" onclick="if(event.target===this)closeAdmin()"><div class="admin-panel">'
-    +'<div class="admin-head"><h2>ניהול תורנים</h2><button class="modal-close" onclick="closeAdmin()">✕</button></div>'
-    +'<div class="admin-section"><h3>ממתינים לאישור ('+pending.length+')</h3>'+ph+'</div>'
+    +'<div class="admin-head"><h2>'+title+'</h2><button class="modal-close" onclick="closeAdmin()">✕</button></div>'
+    +pendingSection
     +'<div class="admin-section"><h3 style="display:flex;justify-content:space-between;align-items:center;">תורנים פעילים ('+active.length+')'+bulkToggle+'</h3>'+bulkBar+ah+'</div>'
-    +'<div class="admin-section"><h3>הוספת תורן ישירות</h3><div class="add-form"><input class="text-input" placeholder="שם מלא" oninput="S.newToranName=this.value"><input class="text-input" placeholder="מספר טלפון" oninput="S.newToranPhone=this.value"><div id="add-toran-error"></div><button class="btn btn-primary" onclick="addToranDirect()">הוספה</button></div></div>'
+    +addSection
   +'</div></div>';
 }
 async function approveToran(id){await updateToranAndRefresh(id,{status:'approved'});}
@@ -957,6 +972,11 @@ async function applyBulkGrade(){
 async function applyBulkKitchenAdmin(val){
   const ids=getSelectedIds();if(!ids.length)return;
   for(let i=0;i<ids.length;i++){try{await api.updateToran(ids[i],{is_admin:val});}catch(e){}}
+  S.adminSelected={};S.adminBulkMode=false;await loadToranim();render();
+}
+async function applyBulkCleaningAdmin(val){
+  const ids=getSelectedIds();if(!ids.length)return;
+  for(let i=0;i<ids.length;i++){try{await api.updateToran(ids[i],{is_cleaning_admin:val});}catch(e){}}
   S.adminSelected={};S.adminBulkMode=false;await loadToranim();render();
 }
 async function applyBulkDuty(module,status){
@@ -1011,7 +1031,9 @@ async function loadFolderData(){
           t.status='inactive';
         }else{
           const ng=Math.min(oldGrade+1,6);
-          await api.updateToran(t.id,{grade:ng,grade_year:cy});t.grade=ng;t.grade_year=cy;
+          /* בסוף שנה — הפטורים מתאפסים */
+          await api.updateToran(t.id,{grade:ng,grade_year:cy,duty_status:'normal',cleaning_duty_status:'normal'});
+          t.grade=ng;t.grade_year=cy;t.duty_status='normal';t.cleaning_duty_status='normal';
         }
       }catch(e){}
     }
