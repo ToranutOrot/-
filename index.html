@@ -624,7 +624,8 @@ function logout(){
 /* ===== כניסה לאפליקציה ===== */
 async function enterApp(){
   /* אם השיעור לא הוגדר אף פעם — הצג מסך הגדרת שיעור */
-  if(!(S.currentUser.grade_year)||S.currentUser.grade_year===0){
+  const gy=S.currentUser.grade_year;
+  if(!gy||gy===0||gy===null){
     S.loginGrade=S.currentUser.grade||1;
     S.loading=false;S.screen='set_grade';render();return;
   }
@@ -1050,7 +1051,8 @@ async function loadFolderData(){
     });
     const approved=S.toranim.filter(function(t){return t.status==='approved';});
     S.folderData=approved.map(function(t){
-      const ds=t.duty_status||'normal',reg=regular[t.id]||0,yt=yomtov[t.id]||0,total=reg+yt;
+      const ds=isK?(t.duty_status||'normal'):(t.cleaning_duty_status||'normal');
+      const reg=regular[t.id]||0,yt=yomtov[t.id]||0,total=reg+yt;
       return{id:t.id,name:t.name,phone:t.phone,grade:t.grade||1,reg:reg,yt:yt,total:total,effective:ds==='half'?total*2:total,duty:ds};
     }).sort(function(a,b){
       if(a.duty==='exempt'&&b.duty!=='exempt')return 1;
