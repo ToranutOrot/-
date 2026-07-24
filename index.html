@@ -321,12 +321,14 @@ const api = {
   insertAssignment: (date, tid) => sb('assignments', { method: 'POST', body: { date: date, toran_id: tid } }).then(r => r && r[0]),
   updateAssignment: (id, d) => sb('assignments?id=eq.' + id, { method: 'PATCH', body: d }).then(r => r && r[0]),
   deleteAssignment: (id) => sb('assignments?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' }),
+  deleteFutureAssignmentsForToran: (toranId, fromYmd) => sb('assignments?toran_id=eq.' + toranId + '&date=gte.' + fromYmd, { method: 'DELETE', prefer: 'return=minimal' }),
   getAssignmentsForCount: (s, e) => sb('assignments?select=toran_id,date&date=gte.' + s + '&date=lte.' + e),
   getCleaningRange: (s, e) => sb('cleaning_assignments?select=id,week_start,toran_id,swap_requested,created_at,toranim(id,name,phone)&week_start=gte.' + s + '&week_start=lte.' + e + '&order=week_start.asc'),
   getCleaningForToran: (tid, from) => sb('cleaning_assignments?select=id,week_start,created_at&toran_id=eq.' + tid + (from ? '&week_start=gte.' + from : '') + '&order=week_start.asc'),
   insertCleaning: (ws, tid) => sb('cleaning_assignments', { method: 'POST', body: { week_start: ws, toran_id: tid } }).then(r => r && r[0]),
   updateCleaning: (id, d) => sb('cleaning_assignments?id=eq.' + id, { method: 'PATCH', body: d }).then(r => r && r[0]),
   deleteCleaning: (id) => sb('cleaning_assignments?id=eq.' + id, { method: 'DELETE', prefer: 'return=minimal' }),
+  deleteFutureCleaningForToran: (toranId, fromWs) => sb('cleaning_assignments?toran_id=eq.' + toranId + '&week_start=gte.' + fromWs, { method: 'DELETE', prefer: 'return=minimal' }),
   getCleaningForCount: (s, e) => sb('cleaning_assignments?select=toran_id&week_start=gte.' + s + '&week_start=lte.' + e)
 };
 
@@ -635,10 +637,8 @@ async function enterApp(){
   await loadAndEnterApp();
 }
 async function enterAppWithoutAdmin(){
-  /* מנהל כללי — קוד שגוי לא מוריד ממנו הרשאות */
-  if(!S.currentUser.is_super_admin){
-    S.currentUser=Object.assign({},S.currentUser,{is_admin:false,is_cleaning_admin:false});
-  }
+  /* קוד שגוי — כולם, כולל מנהל כללי, נכנסים כמשתמש רגיל ללא הרשאות (מונע פריצה) */
+  S.currentUser=Object.assign({},S.currentUser,{is_admin:false,is_cleaning_admin:false,is_super_admin:false});
   await enterApp();
 }
 function renderSetGradeScreen(){
@@ -680,14 +680,31 @@ async function loadMonth(y,m){
   try{rows=await api.getAssignmentsRange(start,end)||[];}
   catch(e){try{rows=await sb('assignments?select=id,date,toran_id,created_at,toranim(id,name,phone)&date=gte.'+start+'&date=lte.'+end+'&order=date.asc')||[];}catch(e2){}}
   S.assignments={};
-  rows.forEach(function(r){if(!S.assignments[r.date])S.assignments[r.date]=[];S.assignments[r.date].push({id:r.id,toran_id:r.toran_id,name:r.toranim?r.toranim.name:'',created_at:r.created_at,swap_requested:!!r.swap_requested});});
+  const today0=todayYMD();
+  rows.forEach(function(r){
+    if(!S.assignments[r.date])S.assignments[r.date]=[];
+    /* ימים שעברו לא נשארים "זוהרים" — בקשת החלפה שלא נענתה מבוטלת אוטומטית */
+    if(r.swap_requested&&r.date<today0){
+      api.updateAssignment(r.id,{swap_requested:false}).catch(function(){});
+      r.swap_requested=false;
+    }
+    S.assignments[r.date].push({id:r.id,toran_id:r.toran_id,name:r.toranim?r.toranim.name:'',created_at:r.created_at,swap_requested:!!r.swap_requested});
+  });
 }
 async function loadCleaningWeeks(){
   const today=todayYMD(),start=weekStartFor(addDays(today,-28)),end=addDays(weekStartFor(today),112);
   let rows=[];
   try{rows=await api.getCleaningRange(start,end)||[];}catch(e){}
   S.cleaningAssignments={};
-  rows.forEach(function(r){const ws=r.week_start;if(!S.cleaningAssignments[ws])S.cleaningAssignments[ws]=[];S.cleaningAssignments[ws].push({id:r.id,toran_id:r.toran_id,name:r.toranim?r.toranim.name:'',swap_requested:!!r.swap_requested,created_at:r.created_at});});
+  const curWs=weekStartFor(today);
+  rows.forEach(function(r){
+    const ws=r.week_start;if(!S.cleaningAssignments[ws])S.cleaningAssignments[ws]=[];
+    if(r.swap_requested&&weekEndFor(ws)<today){
+      api.updateCleaning(r.id,{swap_requested:false}).catch(function(){});
+      r.swap_requested=false;
+    }
+    S.cleaningAssignments[ws].push({id:r.id,toran_id:r.toran_id,name:r.toranim?r.toranim.name:'',swap_requested:!!r.swap_requested,created_at:r.created_at});
+  });
 }
 async function computeBanners(){
   S.banners=[];if(!S.currentUser)return;
@@ -1007,11 +1024,28 @@ async function applyBulkDuty(module,status){
   S.adminSelected={};S.adminBulkMode=false;await loadToranim();render();
 }
 async function applyBulkDeactivate(){
-  const ids=getSelectedIds();if(!ids.length||!confirm('להסיר '+ids.length+' תורנים מהמערכת?'))return;
-  for(let i=0;i<ids.length;i++){try{await api.updateToran(ids[i],{status:'inactive'});}catch(e){}}
-  S.adminSelected={};S.adminBulkMode=false;await loadToranim();render();
+  const ids=getSelectedIds();if(!ids.length||!confirm('להסיר '+ids.length+' תורנים מהמערכת? כל התורנויות העתידיות שלהם יימחקו.'))return;
+  const today=todayYMD(),weekStart=weekStartFor(today);
+  for(let i=0;i<ids.length;i++){
+    try{
+      await Promise.all([api.deleteFutureAssignmentsForToran(ids[i],today),api.deleteFutureCleaningForToran(ids[i],weekStart)]);
+      await api.updateToran(ids[i],{status:'inactive'});
+    }catch(e){}
+  }
+  S.adminSelected={};S.adminBulkMode=false;await loadToranim();await loadMonth(S.viewYear,S.viewMonth);await loadCleaningWeeks();render();
 }
-async function deactivateToran(id){if(!confirm('להסיר?'))return;await updateToranAndRefresh(id,{status:'inactive'});}
+async function deactivateToran(id){
+  if(!confirm('להסיר? כל התורנויות העתידיות שלו יימחקו.'))return;
+  try{
+    const today=todayYMD();
+    await Promise.all([
+      api.deleteFutureAssignmentsForToran(id,today),
+      api.deleteFutureCleaningForToran(id,weekStartFor(today))
+    ]);
+  }catch(e){}
+  await updateToranAndRefresh(id,{status:'inactive'});
+  await loadMonth(S.viewYear,S.viewMonth);await loadCleaningWeeks();render();
+}
 async function updateToranAndRefresh(id,patch){try{await api.updateToran(id,patch);await loadToranim();if(S.currentUser&&S.currentUser.id===id)S.currentUser=Object.assign({},S.currentUser,patch);render();}catch(e){alert('שגיאה: '+e.message);}}
 async function addToranDirect(){
   const name=(S.newToranName||'').trim(),phone=normalizePhone(S.newToranPhone||'');
@@ -1050,6 +1084,8 @@ async function loadFolderData(){
       const shouldDeactivate=DEACTIVATE_ON_PROMOTION.indexOf(oldGrade)!==-1;
       try{
         if(shouldDeactivate){
+          const today0=todayYMD();
+          await Promise.all([api.deleteFutureAssignmentsForToran(t.id,today0),api.deleteFutureCleaningForToran(t.id,weekStartFor(today0))]);
           await api.updateToran(t.id,{status:'inactive',grade_year:cy});
           t.status='inactive';
         }else{
@@ -1062,6 +1098,9 @@ async function loadFolderData(){
     }
     /* נסנן מחוץ לרשימה את מי שהוסר */
     S.toranim=S.toranim.filter(function(t){return t.status!=='inactive'||t.id===S.currentUser.id;});
+    if(needsPromotion.some(function(t){return t.status==='inactive';})){
+      await loadMonth(S.viewYear,S.viewMonth);await loadCleaningWeeks();
+    }
     const isK=S.activeModule==='kitchen';
     const rows=isK?(await api.getAssignmentsForCount(cycle.startYmd,cycle.endYmd)||[]):(await api.getCleaningForCount(cycle.startYmd,cycle.endYmd)||[]);
     const regular={},yomtov={};
