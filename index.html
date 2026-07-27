@@ -380,10 +380,10 @@ function hebrewToGregorian(hy,hm,hd){return rdToGregorian(hebrewToRD(hy,hm,hd));
 /* טווח ספירה: כ"ג אב – כ' אב */
 function getCountingCycleRange(){
   const t=new Date(), h=gregorianToHebrew(t.getFullYear(),t.getMonth()+1,t.getDate());
-  const after26Av=h.month>5||(h.month===5&&h.day>=26);
-  const cy=after26Av?h.year:h.year-1;
-  const startYmd=hebrewToGregorian(cy,5,26), endYmd=hebrewToGregorian(cy+1,5,25);
-  const label='כ״ו אב '+hebrewGematria(cy%1000)+' – כ״ה אב '+hebrewGematria((cy+1)%1000);
+  const after11Av=h.month>5||(h.month===5&&h.day>=11);
+  const cy=after11Av?h.year:h.year-1;
+  const startYmd=hebrewToGregorian(cy,5,11), endYmd=hebrewToGregorian(cy+1,5,10);
+  const label='י״א אב '+hebrewGematria(cy%1000)+' – י׳ אב '+hebrewGematria((cy+1)%1000);
   return {startYmd:startYmd,endYmd:endYmd,label:label,cy:cy};
 }
 
@@ -494,7 +494,7 @@ const S={
   loginName:'',loginPhone:'',loginError:'',rememberMe:false,loginGrade:1,
   currentUser:null, pinInput:'',pinConfirm:'',pinError:'',
   activeModule:'kitchen',
-  toranim:[], viewYear:0,viewMonth:0, assignments:{}, modalDate:null, assignQuery:'',
+  toranim:[], viewYear:0,viewMonth:0, assignments:{}, modalDate:null, assignQuery:'', phoneRevealId:null,
   cleaningAssignments:{}, cleaningViewWeekStart:null, cleaningModalWeek:null, cleaningAssignQuery:'',
   searchQuery:'', banners:[], dismissedBanners:{},
   adminOpen:false, newToranName:'',newToranPhone:'',
@@ -813,8 +813,9 @@ async function navMonth(delta){let m=S.viewMonth+delta,y=S.viewYear;if(m<1){m=12
 async function goToday(){const t=new Date();S.viewYear=t.getFullYear();S.viewMonth=t.getMonth()+1;await loadMonth(S.viewYear,S.viewMonth);render();}
 
 /* מטבח — מודאל יום */
-function openDay(ds){S.modalDate=ds;S.assignQuery='';render();}
-function closeModal(){S.modalDate=null;render();}
+function openDay(ds){S.modalDate=ds;S.assignQuery='';S.phoneRevealId=null;render();}
+function closeModal(){S.modalDate=null;S.phoneRevealId=null;render();}
+function togglePhoneReveal(toranId){S.phoneRevealId=(S.phoneRevealId===toranId)?null:toranId;render();}
 function startQuickAssign(tid){S.quickAssignToranId=tid;S.folderOpen=false;render();}
 function cancelQuickAssign(){S.quickAssignToranId=null;render();}
 async function quickAssignToDay(ds){
@@ -834,7 +835,9 @@ function renderModal(){
     if(isA)bt+='<button class="remove-x" onclick="removeAssignment(\''+a.id+'\')">✕</button>';
     const tag=a.swap_requested?' <span class="pill pill-wait">מחפש/ת מחליף</span>':'';
     const tor=S.toranim.find(function(x){return x.id===a.toran_id;});const g=tor?tor.grade||1:1;
-    return '<div class="assigned-row"><span style="display:flex;align-items:center;gap:7px;"><span class="gb gb'+g+'" style="font-size:10px;padding:1px 6px;">'+esc(GRADE_LETTERS[g])+'</span>'+esc(a.name)+tag+'</span><span class="row-actions">'+bt+'</span></div>';
+    const nameHtml=isA?'<span style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" onclick="togglePhoneReveal(\''+a.toran_id+'\')">'+esc(a.name)+'</span>':esc(a.name);
+    const phoneRow=(isA&&S.phoneRevealId===a.toran_id&&tor)?'<div style="margin-top:4px;"><input class="text-input" style="font-size:13px;padding:6px 10px;direction:ltr;text-align:left;" value="'+esc(tor.phone)+'" readonly onclick="this.select()"></div>':'';
+    return '<div class="assigned-row" style="flex-direction:column;align-items:stretch;"><div style="display:flex;align-items:center;justify-content:space-between;"><span style="display:flex;align-items:center;gap:7px;"><span class="gb gb'+g+'" style="font-size:10px;padding:1px 6px;">'+esc(GRADE_LETTERS[g])+'</span>'+nameHtml+tag+'</span><span class="row-actions">'+bt+'</span></div>'+phoneRow+'</div>';
   }).join(''):'<div class="empty-note">אין עדיין תורנים משובצים</div>';
   const box=isA?'<label class="field-label">הוספת תורן</label><div class="assign-box"><input class="text-input" placeholder="הקלידו שם תורן רשום..." oninput="updateAssignSuggestions(this.value)" autocomplete="off"><div id="assign-suggestions-slot"></div></div>':(!isFut?'<div class="empty-note-sm">יום זה כבר עבר.</div>':'<div class="empty-note-sm">רק מנהלי מטבח יכולים לשבץ.</div>');
   return '<div class="modal-overlay" onclick="if(event.target===this)closeModal()"><div class="modal-box"><div class="modal-head"><div><div class="g-date">'+formatGregFull(ds)+'</div><div class="h-date">'+formatHebFull(ds)+'</div></div><button class="modal-close" onclick="closeModal()">✕</button></div><div class="modal-body">'+qh+'<div class="assigned-list">'+rh+'</div>'+box+'</div></div></div>';
@@ -878,8 +881,8 @@ function navCleaningWeeks(d){S.cleaningViewWeekStart=addDays(S.cleaningViewWeekS
 function goToCurrentWeek(){S.cleaningViewWeekStart=weekStartFor(addDays(todayYMD(),-14));render();}
 
 /* ניקיון — מודאל שבוע */
-function openCleaningWeek(ws){S.cleaningModalWeek=ws;S.cleaningAssignQuery='';render();}
-function closeCleaningModal(){S.cleaningModalWeek=null;render();}
+function openCleaningWeek(ws){S.cleaningModalWeek=ws;S.cleaningAssignQuery='';S.phoneRevealId=null;render();}
+function closeCleaningModal(){S.cleaningModalWeek=null;S.phoneRevealId=null;render();}
 function renderCleaningModal(){
   const ws=S.cleaningModalWeek,we=weekEndFor(ws),lb=formatWeekLabel(ws),list=S.cleaningAssignments[ws]||[],isA=S.currentUser.is_cleaning_admin,isFut=we>=todayYMD();
   const rh=list.length?list.map(function(a){
@@ -889,7 +892,9 @@ function renderCleaningModal(){
     if(isA)bt+='<button class="remove-x" onclick="removeCleaningAssignment(\''+a.id+'\')">✕</button>';
     const tag=a.swap_requested?' <span class="pill pill-wait">מחפש/ת מחליף</span>':'';
     const tor=S.toranim.find(function(x){return x.id===a.toran_id;});const g=tor?tor.grade||1:1;
-    return '<div class="assigned-row"><span style="display:flex;align-items:center;gap:7px;"><span class="gb gb'+g+'" style="font-size:10px;padding:1px 6px;">'+esc(GRADE_LETTERS[g])+'</span>'+esc(a.name)+tag+'</span><span class="row-actions">'+bt+'</span></div>';
+    const nameHtml=isA?'<span style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" onclick="togglePhoneReveal(\''+a.toran_id+'\')">'+esc(a.name)+'</span>':esc(a.name);
+    const phoneRow=(isA&&S.phoneRevealId===a.toran_id&&tor)?'<div style="margin-top:4px;"><input class="text-input" style="font-size:13px;padding:6px 10px;direction:ltr;text-align:left;" value="'+esc(tor.phone)+'" readonly onclick="this.select()"></div>':'';
+    return '<div class="assigned-row" style="flex-direction:column;align-items:stretch;"><div style="display:flex;align-items:center;justify-content:space-between;"><span style="display:flex;align-items:center;gap:7px;"><span class="gb gb'+g+'" style="font-size:10px;padding:1px 6px;">'+esc(GRADE_LETTERS[g])+'</span>'+nameHtml+tag+'</span><span class="row-actions">'+bt+'</span></div>'+phoneRow+'</div>';
   }).join(''):'<div class="empty-note">אין עדיין תורנים משובצים לשבוע זה</div>';
   const box=isA?'<label class="field-label">הוספת תורן</label><div class="assign-box"><input class="text-input" placeholder="הקלידו שם תורן רשום..." oninput="updateCleaningSuggestions(this.value)" autocomplete="off"><div id="cleaning-assign-slot"></div></div>':(!isFut?'<div class="empty-note-sm">שבוע זה כבר עבר.</div>':'<div class="empty-note-sm">רק מנהלי ניקיון יכולים לשבץ.</div>');
   return '<div class="modal-overlay" onclick="if(event.target===this)closeCleaningModal()"><div class="modal-box"><div class="modal-head"><div><div class="g-date">'+lb.gregPart+'</div><div class="h-date">'+lb.hebPart+'</div></div><button class="modal-close" onclick="closeCleaningModal()">✕</button></div><div class="modal-body"><div class="assigned-list">'+rh+'</div>'+box+'</div></div></div>';
