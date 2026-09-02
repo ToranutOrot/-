@@ -858,7 +858,6 @@ function renderModal(){
   const rh=list.length?list.map(function(a){
     const im=a.toran_id===S.currentUser.id;let bt='';
     if(im&&isFut)bt+=a.swap_requested?'<button class="btn btn-ghost btn-sm" onclick="cancelSwapRequest(\''+a.id+'\')">ביטול בקשה</button>':'<button class="btn btn-ghost btn-sm" onclick="requestSwap(\''+a.id+'\')">חפש מחליף</button>';
-    else if(!im&&a.swap_requested)bt+='<button class="btn btn-confirm btn-sm" onclick="claimSwap(\''+a.id+'\')">החלף</button>';
     if(isA)bt+='<button class="remove-x" onclick="removeAssignment(\''+a.id+'\')">✕</button>';
     const tag=a.swap_requested?' <span class="pill pill-wait">מחפש/ת מחליף</span>':'';
     const tor=S.toranim.find(function(x){return x.id===a.toran_id;});const g=tor?tor.grade||1:1;
@@ -887,11 +886,6 @@ async function removeAssignment(id){const ds=S.modalDate;try{await api.deleteAss
 function findMA(id){return(S.assignments[S.modalDate]||[]).find(function(a){return a.id===id;});}
 async function requestSwap(id){try{await api.updateAssignment(id,{swap_requested:true});const a=findMA(id);if(a)a.swap_requested=true;render();}catch(e){alert('שגיאה: '+e.message);}}
 async function cancelSwapRequest(id){try{await api.updateAssignment(id,{swap_requested:false});const a=findMA(id);if(a)a.swap_requested=false;render();}catch(e){alert('שגיאה: '+e.message);}}
-async function claimSwap(id){
-  if(!confirm('לקחת את התורנות?'))return;const ds=S.modalDate;
-  if((S.assignments[ds]||[]).some(function(a){return a.toran_id===S.currentUser.id;})){alert('את/ה כבר משובץ/צת ביום זה');return;}
-  try{await api.updateAssignment(id,{toran_id:S.currentUser.id,swap_requested:false});const a=findMA(id);if(a){a.toran_id=S.currentUser.id;a.name=S.currentUser.name;a.swap_requested=false;}render();}catch(e){alert('שגיאה: '+e.message);}
-}
 
 /* ===== ניקיון — לוח שבועי ===== */
 function renderCleaningView(){
@@ -916,7 +910,6 @@ function renderCleaningModal(){
   const rh=list.length?list.map(function(a){
     const im=a.toran_id===S.currentUser.id;let bt='';
     if(im&&isFut)bt+=a.swap_requested?'<button class="btn btn-ghost btn-sm" onclick="cancelCleaningSwap(\''+a.id+'\')">ביטול בקשה</button>':'<button class="btn btn-ghost btn-sm" onclick="requestCleaningSwap(\''+a.id+'\')">חפש מחליף</button>';
-    else if(!im&&a.swap_requested)bt+='<button class="btn btn-confirm btn-sm" onclick="claimCleaningSwap(\''+a.id+'\')">החלף</button>';
     if(isA)bt+='<button class="remove-x" onclick="removeCleaningAssignment(\''+a.id+'\')">✕</button>';
     const tag=a.swap_requested?' <span class="pill pill-wait">מחפש/ת מחליף</span>':'';
     const tor=S.toranim.find(function(x){return x.id===a.toran_id;});const g=tor?tor.grade||1:1;
@@ -945,11 +938,6 @@ async function removeCleaningAssignment(id){const ws=S.cleaningModalWeek;try{awa
 function findCA(id){return(S.cleaningAssignments[S.cleaningModalWeek]||[]).find(function(a){return a.id===id;});}
 async function requestCleaningSwap(id){try{await api.updateCleaning(id,{swap_requested:true});const a=findCA(id);if(a)a.swap_requested=true;render();}catch(e){alert('שגיאה: '+e.message);}}
 async function cancelCleaningSwap(id){try{await api.updateCleaning(id,{swap_requested:false});const a=findCA(id);if(a)a.swap_requested=false;render();}catch(e){alert('שגיאה: '+e.message);}}
-async function claimCleaningSwap(id){
-  if(!confirm('לקחת את תורנות הניקיון?'))return;const ws=S.cleaningModalWeek;
-  if((S.cleaningAssignments[ws]||[]).some(function(a){return a.toran_id===S.currentUser.id;})){alert('את/ה כבר משובץ/צת לשבוע זה');return;}
-  try{await api.updateCleaning(id,{toran_id:S.currentUser.id,swap_requested:false});const a=findCA(id);if(a){a.toran_id=S.currentUser.id;a.name=S.currentUser.name;a.swap_requested=false;}render();}catch(e){alert('שגיאה: '+e.message);}
-}
 
 /* ===== פאנל ניהול (מנהלי מטבח בלבד) ===== */
 function openAdmin(){S.adminOpen=true;S.newToranName='';S.newToranPhone='';S.adminBulkMode=false;S.adminSelected={};render();}
