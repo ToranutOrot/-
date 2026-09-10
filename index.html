@@ -849,8 +849,17 @@ async function quickAssignToDay(ds){
   const tid=S.quickAssignToranId,t=S.toranim.find(function(x){return x.id===tid;});
   if(!t){S.quickAssignToranId=null;render();return;}
   if((S.assignments[ds]||[]).some(function(a){return a.toran_id===tid;})){alert(t.name+' כבר משובץ/צת ביום זה');return;}
-  try{const cr=await api.insertAssignment(ds,tid);if(!S.assignments[ds])S.assignments[ds]=[];S.assignments[ds].push({id:cr.id,toran_id:tid,name:t.name,created_at:cr.created_at,swap_requested:false});S.quickAssignToranId=null;S.modalDate=null;render();}
+  try{const cr=await api.insertAssignment(ds,tid);if(!S.assignments[ds])S.assignments[ds]=[];S.assignments[ds].push({id:cr.id,toran_id:tid,name:t.name,created_at:cr.created_at,swap_requested:false});S.quickAssignToranId=null;S.modalDate=null;triggerLateReminderIfNeeded(ds,cr.id);render();}
   catch(e){alert('שגיאה: '+e.message);}
+}
+/* מפעיל תזכורת SMS מיידית אם השיבוץ נעשה בפחות מ-5 ימים מראש (לא חוסם את הממשק) */
+function triggerLateReminderIfNeeded(dateStr,assignmentId){
+  if(daysBetween(todayYMD(),dateStr)>=5)return;
+  fetch(SUPABASE_URL+'/functions/v1/send-kitchen-reminders',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','apikey':SUPABASE_ANON_KEY,'Authorization':'Bearer '+SUPABASE_ANON_KEY},
+    body:JSON.stringify({mode:'late_immediate',assignment_id:assignmentId})
+  }).catch(function(){ /* אם זה נכשל, רשת הביטחון היומית תתפוס את זה */ });
 }
 function renderModal(){
   const ds=S.modalDate,list=S.assignments[ds]||[],isA=S.currentUser.is_admin,isFut=ds>=todayYMD();
@@ -879,7 +888,7 @@ async function assignToran(tid){
   const t=S.toranim.find(function(x){return x.id===tid;});
   if(t&&t.grade===0){alert('לתורן זה סטטוס "עולה ל-א" — לא ניתן לשבץ אותו עד שתתחיל השנה החדשה.');return;}
   if(t&&t.duty_status==='exempt'){if(!confirm('לתורן זה יש פטור תורנות. אתה בטוח שאתה רוצה לשבץ?'))return;}
-  try{const cr=await api.insertAssignment(ds,tid);if(!S.assignments[ds])S.assignments[ds]=[];S.assignments[ds].push({id:cr.id,toran_id:tid,name:t.name,created_at:cr.created_at,swap_requested:false});S.assignQuery='';render();}
+  try{const cr=await api.insertAssignment(ds,tid);if(!S.assignments[ds])S.assignments[ds]=[];S.assignments[ds].push({id:cr.id,toran_id:tid,name:t.name,created_at:cr.created_at,swap_requested:false});S.assignQuery='';triggerLateReminderIfNeeded(ds,cr.id);render();}
   catch(e){alert((e.message&&e.message.indexOf('duplicate')!==-1)?'תורן זה כבר משובץ ביום זה':'שגיאה: '+e.message);}
 }
 async function removeAssignment(id){const ds=S.modalDate;try{await api.deleteAssignment(id);S.assignments[ds]=(S.assignments[ds]||[]).filter(function(a){return a.id!==id;});render();}catch(e){alert('שגיאה: '+e.message);}}
