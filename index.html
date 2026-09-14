@@ -393,8 +393,8 @@ function hebrewToGregorian(hy,hm,hd){return rdToGregorian(hebrewToRD(hy,hm,hd));
 /* טווח ספירה: כ"ג אב – כ' אב */
 function getCountingCycleRange(){
   const t=new Date(), h=gregorianToHebrew(t.getFullYear(),t.getMonth()+1,t.getDate());
-  const after11Av=h.month>5||(h.month===5&&h.day>=11);
-  const cy=after11Av?h.year:h.year-1;
+  const isAvOrElul=(h.month===5&&h.day>=11)||h.month===6;
+  const cy=isAvOrElul?h.year:h.year-1;
   const startYmd=hebrewToGregorian(cy,5,11), endYmd=hebrewToGregorian(cy+1,5,10);
   const label='י״א אב '+hebrewGematria(cy%1000)+' – י׳ אב '+hebrewGematria((cy+1)%1000);
   return {startYmd:startYmd,endYmd:endYmd,label:label,cy:cy};
